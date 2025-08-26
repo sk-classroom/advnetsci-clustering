@@ -165,37 +165,38 @@ def detect_communities(edge_list, num_nodes):
 def _(mo):
     mo.md(
         r"""
-    ## Task 3: Theoretical Detectability Threshold
+    ## Task 3: Empirical Threshold Detection
 
-    After running your experiments, determine the **theoretical detectability threshold** for the Stochastic Block Model.
+    Implement a function that analyzes your experimental results to automatically detect the empirical detectability threshold.
 
-    **Your task:**
-    1. Run experiments with `delta_k` values from 0 to 8 (10 intermediate points)
-    2. Plot the Normalized Mutual Information (NMI) vs. `delta_k`
-    3. Find the minimum `delta_k` where your algorithm performs better than random guessing (NMI > ~0.1)
-    4. **Compare with theory:** The theoretical threshold for detectability in SBM with two equal-sized communities is:
+    **Requirements:**
+    - Input: `delta_k_values` (array) and `nmi_scores` (array) from your experiments
+    - Output: `float` representing the empirical threshold where communities become detectable
     
-    **Formula:** `delta_k_threshold = sqrt(k)` where k is the average degree
-    
-    For k=20, the theoretical threshold is `delta_k_threshold = sqrt(20) ≈ 4.47`
+    **Algorithm suggestions:**
+    - Find the first `delta_k` where NMI consistently exceeds a threshold (e.g., 0.1)
+    - Use the steepest gradient in the NMI curve 
+    - Find the inflection point of the performance curve
+    - Any other method that identifies the transition point
 
-    **Win condition:** Find the empirical threshold from your results and compare it with the theoretical prediction!
+    **Evaluation:** Your empirical threshold will be compared with the theoretical prediction `sqrt(k) ≈ 4.47`
     """
     )
     return
 
 
 @app.function
-# Task 3 - Helper function to compute theoretical threshold
-def compute_theoretical_threshold(k):
+# Task 3
+def find_empirical_threshold(delta_k_values, nmi_scores):
     """
-    Compute the theoretical detectability threshold for SBM.
+    Find the empirical detectability threshold from experimental results.
 
     Args:
-        k (float): Average degree
+        delta_k_values (numpy.ndarray): Array of delta_k values tested
+        nmi_scores (numpy.ndarray): Corresponding NMI scores
 
     Returns:
-        float: Theoretical threshold delta_k_threshold = sqrt(k)
+        float: Empirical threshold where communities become detectable
     """
     pass
 
@@ -222,15 +223,21 @@ def _(mo):
 
     The performance curve shows how community detection accuracy (NMI) changes with the community structure strength (`delta_k`).
 
-    **Key observations to discuss:**
+    **Key observations:**
     - **Random regime** (`delta_k < threshold`): NMI ≈ 0, algorithm performs no better than random guessing
     - **Detectable regime** (`delta_k > threshold`): NMI increases, communities become detectable
-    - **Threshold location**: Compare your empirical threshold with the theoretical prediction `sqrt(20) ≈ 4.47`
+    - **Phase transition**: Sharp boundary between undetectable and detectable regimes
+    - **Theoretical prediction**: `sqrt(k) = sqrt(20) ≈ 4.47`
+
+    **Your Results:**
+    - Red dashed line: Theoretical threshold
+    - Blue dashed line: Your empirical threshold (if Task 3 implemented)
+    - Performance feedback: Check how close your empirical threshold matches theory!
 
     **Questions to consider:**
     - How sharp is the phase transition in your results?
-    - Does your chosen algorithm match the theoretical prediction?
-    - How does performance vary across different random realizations?
+    - What threshold detection method worked best for your data?
+    - How sensitive is the threshold to the choice of community detection algorithm?
     """
     )
     return
@@ -336,6 +343,37 @@ def _(delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutu
     return nmi_scores,
 
 
+@app.cell
+def _(delta_k_values, nmi_scores, find_empirical_threshold, np):
+    # Find empirical threshold using student's implementation
+    try:
+        empirical_threshold = find_empirical_threshold(delta_k_values, nmi_scores)
+        if empirical_threshold is None:
+            empirical_threshold = np.nan
+        print(f"Empirical threshold: {empirical_threshold:.2f}")
+    except:
+        empirical_threshold = np.nan
+        print("Empirical threshold: Not implemented yet")
+    
+    # Theoretical threshold
+    k = 20
+    theoretical_threshold = np.sqrt(k)
+    print(f"Theoretical threshold: {theoretical_threshold:.2f}")
+    
+    if not np.isnan(empirical_threshold):
+        difference = abs(empirical_threshold - theoretical_threshold)
+        print(f"Difference: {difference:.2f}")
+        
+        if difference < 1.0:
+            print("🎉 Great match with theory!")
+        elif difference < 2.0:
+            print("👍 Good approximation to theory!")
+        else:
+            print("🤔 Consider refining your threshold detection method")
+    
+    return empirical_threshold,
+
+
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""#### Performance Visualization""")
@@ -343,7 +381,7 @@ def _(mo):
 
 
 @app.cell
-def _(delta_k_values, nmi_scores, theoretical_threshold, pd, alt):
+def _(delta_k_values, nmi_scores, theoretical_threshold, empirical_threshold, pd, alt, np):
     # Create dataframe for plotting
     df = pd.DataFrame({
         'delta_k': delta_k_values,
@@ -393,8 +431,40 @@ def _(delta_k_values, nmi_scores, theoretical_threshold, pd, alt):
         text='label:N'
     )
     
+    # Add empirical threshold line if available
+    charts_to_combine = [line_chart, threshold_line, threshold_text]
+    
+    if not np.isnan(empirical_threshold):
+        empirical_line = alt.Chart(pd.DataFrame({
+            'threshold': [empirical_threshold, empirical_threshold],
+            'y': [0, 1]
+        })).mark_line(
+            color='blue',
+            strokeDash=[3, 3],
+            strokeWidth=2
+        ).encode(
+            x=alt.X('threshold:Q'),
+            y=alt.Y('y:Q')
+        )
+        
+        empirical_text = alt.Chart(pd.DataFrame({
+            'threshold': [empirical_threshold + 0.2],
+            'y': [0.6],
+            'label': [f'Empirical\nThreshold\n{empirical_threshold:.2f}']
+        })).mark_text(
+            align='left',
+            color='blue',
+            fontSize=12
+        ).encode(
+            x=alt.X('threshold:Q'),
+            y=alt.Y('y:Q'),
+            text='label:N'
+        )
+        
+        charts_to_combine.extend([empirical_line, empirical_text])
+    
     # Combine all elements
-    chart = (line_chart + threshold_line + threshold_text).resolve_scale(
+    chart = alt.layer(*charts_to_combine).resolve_scale(
         x='shared',
         y='shared'
     )
