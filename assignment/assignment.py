@@ -165,21 +165,18 @@ def detect_communities(edge_list, num_nodes):
 def _(mo):
     mo.md(
         r"""
-    ## Task 3: Empirical Threshold Detection
+    ## Task 3: Discover the Theoretical Relationship
 
-    Implement a function that analyzes your experimental results to automatically detect the empirical detectability threshold.
+    Your goal is to discover the functional relationship between average degree `k` and the detectability threshold `δk` through experimentation.
 
-    **Requirements:**
-    - Input: `delta_k_values` (array) and `nmi_scores` (array) from your experiments
-    - Output: `float` representing the empirical threshold where communities become detectable
-    
-    **Algorithm suggestions:**
-    - Find the first `delta_k` where NMI consistently exceeds a threshold (e.g., 0.1)
-    - Use the steepest gradient in the NMI curve 
-    - Find the inflection point of the performance curve
-    - Any other method that identifies the transition point
+    **Your task:**
+    1. Implement a function to find the empirical threshold where NMI drops to nearly zero (~0.1)
+    2. Use the interactive tool below to run experiments with different values of `k`
+    3. For each `k`, record the threshold `δk` where communities become undetectable
+    4. Observe how the relationship between `k` and `δk` emerges as you add more data points
+    5. **Predict the functional form**: What mathematical relationship do you see?
 
-    **Evaluation:** Your empirical threshold will be compared with the theoretical prediction `sqrt(k) ≈ 4.47`
+    **Hint:** The theoretical relationship is `δk_threshold = f(k)`. Can you guess what `f(k)` is?
     """
     )
     return
@@ -187,16 +184,17 @@ def _(mo):
 
 @app.function
 # Task 3
-def find_empirical_threshold(delta_k_values, nmi_scores):
+def find_empirical_threshold(delta_k_values, nmi_scores, threshold_nmi=0.1):
     """
-    Find the empirical detectability threshold from experimental results.
+    Find the empirical detectability threshold where NMI drops to nearly zero.
 
     Args:
         delta_k_values (numpy.ndarray): Array of delta_k values tested
-        nmi_scores (numpy.ndarray): Corresponding NMI scores
+        nmi_scores (numpy.ndarray): Corresponding NMI scores  
+        threshold_nmi (float): NMI threshold to define "nearly zero" (default: 0.1)
 
     Returns:
-        float: Empirical threshold where communities become detectable
+        float: Empirical threshold δk where communities become undetectable
     """
     pass
 
@@ -206,9 +204,9 @@ def _(mo):
     mo.md(
         r"""
     ---
-    ## Community Detectability Experiment
+    ## Interactive Detectability Explorer
 
-    This experiment will test your implementations by generating SBM networks with different `delta_k` values and measuring community detection performance.
+    Use this tool to explore how the detectability threshold changes with average degree `k`.
     """
     )
     return
@@ -219,25 +217,24 @@ def _(mo):
 def _(mo):
     mo.md(
         r"""
-    ## Experimental Results and Analysis
+    ## Discovery Process and Analysis
 
-    The performance curve shows how community detection accuracy (NMI) changes with the community structure strength (`delta_k`).
+    **How to use the interactive tool:**
 
-    **Key observations:**
-    - **Random regime** (`delta_k < threshold`): NMI ≈ 0, algorithm performs no better than random guessing
-    - **Detectable regime** (`delta_k > threshold`): NMI increases, communities become detectable
-    - **Phase transition**: Sharp boundary between undetectable and detectable regimes
-    - **Theoretical prediction**: `sqrt(k) = sqrt(20) ≈ 4.47`
+    1. **Adjust k slider**: Try different average degree values (5, 10, 15, 20, 25, etc.)
+    2. **Run Experiment**: Click to generate performance curves for current k
+    3. **Find Threshold**: Observe where NMI drops to ~0.1 (your Task 3 function should detect this)
+    4. **Add Data**: Click to save the (k, threshold) pair to your dataset
+    5. **Discover Pattern**: Watch as the relationship emerges in the bottom plot!
 
-    **Your Results:**
-    - Red dashed line: Theoretical threshold
-    - Blue dashed line: Your empirical threshold (if Task 3 implemented)
-    - Performance feedback: Check how close your empirical threshold matches theory!
+    **What you should observe:**
+    - **Performance curves**: Each k value shows a different phase transition point
+    - **Threshold shifts**: Higher k values have different detectability thresholds  
+    - **Emerging relationship**: Your data points should follow a mathematical pattern
+    - **Theoretical match**: Red curve shows the true relationship `threshold = sqrt(k)`
 
-    **Questions to consider:**
-    - How sharp is the phase transition in your results?
-    - What threshold detection method worked best for your data?
-    - How sensitive is the threshold to the choice of community detection algorithm?
+    **The Discovery Goal:**
+    Can you identify that the relationship is `threshold ≈ sqrt(k)` from your experimental data?
     """
     )
     return
@@ -267,14 +264,45 @@ def _(mo):
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md(r"""#### Experimental Parameters""")
+    mo.md(r"""#### Interactive Controls""")
     return
 
 
 @app.cell
-def _(np):
-    # Experimental parameters
-    k = 20          # Average degree (fixed)
+def _(mo, np):
+    # Interactive controls
+    k_slider = mo.ui.slider(
+        start=5,
+        stop=50,
+        step=5,
+        value=20,
+        label="Average degree (k):"
+    )
+    
+    run_button = mo.ui.button(
+        label="Run Experiment",
+        kind="success"
+    )
+    
+    add_data_button = mo.ui.button(
+        label="Add to Dataset",
+        kind="neutral"
+    )
+    
+    # Display controls
+    mo.hstack([
+        mo.vstack([k_slider, "Current k value"]),
+        mo.vstack([run_button, "Run experiments"]),  
+        mo.vstack([add_data_button, "Save threshold"])
+    ])
+    
+    return k_slider, run_button, add_data_button
+
+
+@app.cell
+def _(k_slider, np):
+    # Fixed experimental parameters  
+    k = k_slider.value
     n = 50          # Community size
     q = 2           # Number of communities
     
@@ -283,12 +311,6 @@ def _(np):
     
     # Theoretical threshold
     theoretical_threshold = np.sqrt(k)
-    
-    print(f"Average degree: {k}")
-    print(f"Community size: {n}")
-    print(f"Total network size: {q * n}")
-    print(f"Delta_k range: {delta_k_values}")
-    print(f"Theoretical threshold: {theoretical_threshold:.2f}")
     
     return delta_k_values, k, n, q, theoretical_threshold
 
@@ -300,12 +322,17 @@ def _(mo):
 
 
 @app.cell
-def _(delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutual_info_score, np):
+def _(run_button, delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutual_info_score, np, mo):
+    # Only run experiments when button is clicked
+    mo.stop(not run_button.value, "Click 'Run Experiment' to start")
+    
     # Run experiments for each delta_k value
     nmi_scores = []
     
+    print(f"Running experiments with k = {k}...")
+    
     for delta_k in delta_k_values:
-        print(f"Testing delta_k = {delta_k:.2f}")
+        print(f"  Testing delta_k = {delta_k:.2f}")
         
         # Generate SBM network
         result = generate_sbm(k, n, delta_k, q)
@@ -338,50 +365,69 @@ def _(delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutu
         nmi_scores.append(nmi)
     
     nmi_scores = np.array(nmi_scores)
-    print("Experiments completed!")
+    print("✅ Experiments completed!")
     
     return nmi_scores,
 
 
 @app.cell
-def _(delta_k_values, nmi_scores, find_empirical_threshold, np):
+def _(delta_k_values, nmi_scores, find_empirical_threshold, k, theoretical_threshold, np):
     # Find empirical threshold using student's implementation
     try:
         empirical_threshold = find_empirical_threshold(delta_k_values, nmi_scores)
         if empirical_threshold is None:
             empirical_threshold = np.nan
-        print(f"Empirical threshold: {empirical_threshold:.2f}")
+        print(f"📊 Results for k = {k}:")
+        print(f"  Empirical threshold: {empirical_threshold:.2f}")
+        print(f"  Theoretical threshold: {theoretical_threshold:.2f}")
+        
+        if not np.isnan(empirical_threshold):
+            difference = abs(empirical_threshold - theoretical_threshold)
+            print(f"  Difference: {difference:.2f}")
     except:
         empirical_threshold = np.nan
-        print("Empirical threshold: Not implemented yet")
-    
-    # Theoretical threshold
-    k = 20
-    theoretical_threshold = np.sqrt(k)
-    print(f"Theoretical threshold: {theoretical_threshold:.2f}")
-    
-    if not np.isnan(empirical_threshold):
-        difference = abs(empirical_threshold - theoretical_threshold)
-        print(f"Difference: {difference:.2f}")
-        
-        if difference < 1.0:
-            print("🎉 Great match with theory!")
-        elif difference < 2.0:
-            print("👍 Good approximation to theory!")
-        else:
-            print("🤔 Consider refining your threshold detection method")
+        print(f"📊 Results for k = {k}:")
+        print("  Empirical threshold: Not implemented yet")
+        print(f"  Theoretical threshold: {theoretical_threshold:.2f}")
     
     return empirical_threshold,
 
 
+@app.cell
+def _(mo):
+    # Initialize data collection storage
+    if not hasattr(mo, '_threshold_data'):
+        mo._threshold_data = {'k_values': [], 'thresholds': []}
+    
+    return
+
+
+@app.cell  
+def _(add_data_button, k, empirical_threshold, mo, np):
+    # Add data point when button is clicked
+    if add_data_button.value and not np.isnan(empirical_threshold):
+        # Avoid duplicates
+        if k not in mo._threshold_data['k_values']:
+            mo._threshold_data['k_values'].append(k)
+            mo._threshold_data['thresholds'].append(empirical_threshold)
+            print(f"✅ Added data point: k={k}, threshold={empirical_threshold:.2f}")
+            print(f"📈 Dataset now has {len(mo._threshold_data['k_values'])} points")
+        else:
+            print(f"⚠️  Data point for k={k} already exists")
+    elif add_data_button.value and np.isnan(empirical_threshold):
+        print("❌ Cannot add data: implement find_empirical_threshold first")
+    
+    return
+
+
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md(r"""#### Performance Visualization""")
+    mo.md(r"""#### Current Experiment Results""")
     return
 
 
 @app.cell
-def _(delta_k_values, nmi_scores, theoretical_threshold, empirical_threshold, pd, alt, np):
+def _(delta_k_values, nmi_scores, theoretical_threshold, empirical_threshold, k, pd, alt, np):
     # Create dataframe for plotting
     df = pd.DataFrame({
         'delta_k': delta_k_values,
@@ -400,7 +446,7 @@ def _(delta_k_values, nmi_scores, theoretical_threshold, empirical_threshold, pd
     ).properties(
         width=600,
         height=400,
-        title='Community Detectability: NMI vs Community Structure Strength'
+        title=f'Current Experiment: k = {k}'
     )
     
     # Add theoretical threshold line
@@ -470,6 +516,72 @@ def _(delta_k_values, nmi_scores, theoretical_threshold, empirical_threshold, pd
     )
     
     return chart, df
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""#### Theoretical Relationship Discovery""")
+    return
+
+
+@app.cell
+def _(mo, pd, alt, np):
+    # Create relationship plot from collected data
+    if len(mo._threshold_data['k_values']) >= 2:
+        relationship_df = pd.DataFrame({
+            'k': mo._threshold_data['k_values'],
+            'threshold': mo._threshold_data['thresholds']
+        })
+        
+        # Create scatter plot
+        points = alt.Chart(relationship_df).mark_circle(
+            size=100,
+            color='blue'
+        ).encode(
+            x=alt.X('k:Q', title='Average Degree (k)'),
+            y=alt.Y('threshold:Q', title='Detectability Threshold (δk)'),
+            tooltip=['k:Q', 'threshold:Q']
+        )
+        
+        # Add theoretical curve y = sqrt(x)
+        k_range = np.linspace(5, 50, 100)
+        theory_df = pd.DataFrame({
+            'k': k_range,
+            'threshold': np.sqrt(k_range)
+        })
+        
+        theory_line = alt.Chart(theory_df).mark_line(
+            color='red',
+            strokeDash=[5, 5],
+            strokeWidth=2
+        ).encode(
+            x=alt.X('k:Q'),
+            y=alt.Y('threshold:Q')
+        )
+        
+        relationship_chart = (points + theory_line).properties(
+            width=600,
+            height=400,
+            title='Relationship Discovery: Threshold vs Average Degree'
+        ).resolve_scale(x='shared', y='shared')
+        
+        # Show current data points
+        print("📈 Current dataset:")
+        for k_val, thresh in zip(mo._threshold_data['k_values'], mo._threshold_data['thresholds']):
+            print(f"  k = {k_val}, threshold = {thresh:.2f}")
+        
+        if len(mo._threshold_data['k_values']) >= 3:
+            print("\n🔍 Can you see the pattern? What function relates k to threshold?")
+            print("Hint: Look at how the red theoretical line compares to your data points!")
+    
+    else:
+        relationship_chart = alt.Chart(pd.DataFrame({'x': [0], 'y': [0]})).mark_text(
+            text="Collect at least 2 data points to see the relationship",
+            fontSize=16
+        ).encode(x='x:Q', y='y:Q').properties(width=600, height=400, title='Relationship Discovery')
+        print("📊 Collect data points with different k values to discover the relationship")
+    
+    return relationship_chart,
 
 
 @app.cell
