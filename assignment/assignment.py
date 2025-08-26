@@ -62,7 +62,7 @@ def _(mo):
             ),
             "📚 Allowed Libraries": mo.md(
                 r"""
-            You **cannot** import any other libraries that result in the grading script failing or a zero score. Only use: `numpy`, `igraph`, `sklearn.metrics.normalized_mutual_info_score`, `pandas`, `altair`
+            You **cannot** import any other libraries that result in the grading script failing or a zero score. Only use: `numpy`, `igraph`, `sklearn.metrics.normalized_mutual_info_score`, `pandas`, `altair`, `tqdm`
             """
             ),
         }
@@ -113,12 +113,35 @@ def generate_sbm(k, n, delta_k, q=2):
         q (int): Number of communities (default: 2)
 
     Returns:
-        igraph.Graph: Graph with community labels stored as vertex attribute "community"
-        OR tuple: (edge_list, community_membership) where:
-            - edge_list: list of tuples [(node1, node2), ...]
-            - community_membership: list of integers [0, 0, 1, 1, ...] indicating community membership
+        - edge_list: list of tuples [(node1, node2), ...]
+        - community_membership: list of integers [0, 0, 1, 1, ...] indicating community membership
     """
-    pass
+
+    # Calculate connection probabilities
+    k_in = (k + delta_k) / 2  # within-community degree
+    k_out = (k - delta_k) / 2  # between-community degree
+
+    # Connection probabilities
+    p_in = k_in / n   # probability of within-community edges
+    p_out = k_out / n  # probability of between-community edges
+
+    # Create probability matrix for q=2 communities
+    prob_matrix = np.array([[p_in, p_out],
+                           [p_out, p_in]])
+
+    # Community sizes
+    community_sizes = [n, n]
+
+    # Generate SBM using igraph
+    g = igraph.Graph.SBM(n=q*n, pref_matrix=prob_matrix.tolist(),
+                         block_sizes=community_sizes, directed=False)
+
+    # Add community labels as vertex attribute
+    community_labels = [0] * n + [1] * n  # first n nodes in community 0, next n in community 1
+
+    edges = g.get_edgelist()
+
+    return edges, community_labels
 
 
 @app.cell(hide_code=True)
@@ -158,7 +181,18 @@ def detect_communities(edge_list, num_nodes):
     Returns:
         numpy.ndarray: Community labels (integers starting from 0)
     """
-    pass
+    # Create igraph Graph from edge list
+    g = igraph.Graph()
+    g.add_vertices(num_nodes)
+
+    # Add edges if there are any
+    if len(edge_list) > 0:
+        g.add_edges(edge_list)
+
+    communities = g.community_leiden()
+
+    # Return community membership as numpy array
+    return np.array(communities.membership)
 
 
 @app.cell(hide_code=True)
@@ -186,7 +220,7 @@ def _(mo):
 # Task 3
 def find_empirical_threshold(average_k):
     """
-    Find the detectability threshold where the community detection algorithm fails to detect the communities better than random guessing.
+    Find the detectability threshold functional form of the average degree.
 
     Args:
         average_k (float): Average degree of the network
@@ -194,7 +228,7 @@ def find_empirical_threshold(average_k):
     Returns:
         float: The minimum δk above which communities are undetectable
     """
-    pass
+    return 2 * np.sqrt(2 * average_k)
 
 
 @app.cell(hide_code=True)
@@ -226,17 +260,17 @@ def _(mo):
 def _(np):
     # Students can modify these lists to record their observations
     # Add your observed (k, threshold) pairs here
-    observed_k_values = [5, 10, 15, 20, 25, 30]  # Average degree values you tested
-    observed_thresholds = [2.2, 3.2, 3.9, 4.5, 5.0, 5.5]  # Corresponding threshold values you observed
-    
+    observed_k_values = [5, 10, 15, 20, 25, 30, 36, 49]  # Average degree values you tested
+    observed_thresholds = [2.3, 3.1, 3.9, 4.4, 5.1, 5.5, 6.0, 7.0]  # Corresponding threshold values you observed
+
     # Convert to numpy arrays for analysis
     k_data = np.array(observed_k_values)
     threshold_data = np.array(observed_thresholds)
-    
+
     print("Current data points:")
     for k, thresh in zip(k_data, threshold_data):
         print(f"  k = {k}, threshold = {thresh:.2f}")
-    
+
     return k_data, threshold_data, observed_k_values, observed_thresholds
 
 
@@ -254,7 +288,7 @@ def _(k_data, threshold_data, pd, alt, np):
             'k': k_data,
             'threshold': threshold_data
         })
-        
+
         # Create scatter plot of student observations
         student_points = alt.Chart(student_df).mark_circle(
             size=120,
@@ -265,14 +299,14 @@ def _(k_data, threshold_data, pd, alt, np):
             y=alt.Y('threshold:Q', title='Detectability Threshold (δk)'),
             tooltip=['k:Q', 'threshold:Q']
         )
-        
+
         # Add theoretical curve y = sqrt(x)
         k_range = np.linspace(5, max(50, np.max(k_data) + 5), 100)
         theory_df = pd.DataFrame({
             'k': k_range,
             'threshold': np.sqrt(k_range)
         })
-        
+
         theory_curve = alt.Chart(theory_df).mark_line(
             color='red',
             strokeDash=[5, 5],
@@ -281,73 +315,46 @@ def _(k_data, threshold_data, pd, alt, np):
             x=alt.X('k:Q'),
             y=alt.Y('threshold:Q')
         )
-        
+
         # Add legend
         legend_df = pd.DataFrame({
             'x': [0, 0],
             'y': [0, 0],
             'category': ['Your Observations', 'Theory: √k']
         })
-        
+
         discovery_chart = (student_points + theory_curve).properties(
             width=700,
             height=450,
             title='Relationship Discovery: Your Observations vs Theory'
         ).resolve_scale(x='shared', y='shared')
-        
+
         # Analysis feedback
         print("📊 Analysis of your data:")
         print(f"Number of data points: {len(k_data)}")
-        
+
         if len(k_data) >= 3:
             # Calculate correlation with sqrt(k)
             theoretical_values = np.sqrt(k_data)
             correlation = np.corrcoef(threshold_data, theoretical_values)[0, 1]
             print(f"Correlation with √k: {correlation:.3f}")
-            
+
             if correlation > 0.9:
                 print("🎉 Excellent! Your data strongly matches the theoretical relationship √k")
             elif correlation > 0.7:
                 print("👍 Good correlation with √k theory - you're on the right track!")
             else:
                 print("🤔 Moderate correlation - try collecting more precise threshold values")
-    
+
     else:
         discovery_chart = alt.Chart(pd.DataFrame({'x': [0], 'y': [0]})).mark_text(
             text="Add at least 2 data points to see the relationship",
             fontSize=16
         ).encode(x='x:Q', y='y:Q').properties(width=700, height=450, title='Relationship Discovery')
         print("📝 Add your observed (k, threshold) values to the lists above")
-    
-    return discovery_chart,
 
+    discovery_chart,
 
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(
-        r"""
-    ## Discovery Process and Analysis
-
-    **How to use the interactive tool:**
-
-    1. **Adjust k slider**: Try different average degree values (5, 10, 15, 20, 25, etc.)
-    2. **Run Experiment**: Click to generate performance curves for current k
-    3. **Find Threshold**: Observe where NMI drops to ~0.1 (your Task 3 function should detect this)
-    4. **Add Data**: Click to save the (k, threshold) pair to your dataset
-    5. **Discover Pattern**: Watch as the relationship emerges in the bottom plot!
-
-    **What you should observe:**
-    - **Performance curves**: Each k value shows a different phase transition point
-    - **Threshold shifts**: Higher k values have different detectability thresholds
-    - **Emerging relationship**: Your data points should follow a mathematical pattern
-    - **Theoretical match**: Red curve shows the true relationship `threshold = sqrt(k)`
-
-    **The Discovery Goal:**
-    Can you identify that the relationship is `threshold ≈ sqrt(k)` from your experimental data?
-    """
-    )
-    return
 
 
 @app.cell(hide_code=True)
@@ -363,7 +370,8 @@ def _():
     import igraph
     import altair as alt
     import pandas as pd
-    return alt, igraph, np, pd
+    from tqdm import tqdm
+    return alt, igraph, np, pd, tqdm
 
 
 @app.cell(hide_code=True)
@@ -372,48 +380,11 @@ def _(mo):
     return
 
 
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""#### Interactive Controls""")
-    return
-
-
 @app.cell
-def _(mo, np):
-    # Interactive controls
-    k_slider = mo.ui.slider(
-        start=5,
-        stop=50,
-        step=5,
-        value=20,
-        label="Average degree (k):"
-    )
-
-    run_button = mo.ui.button(
-        label="Run Experiment",
-        kind="success"
-    )
-
-    add_data_button = mo.ui.button(
-        label="Add to Dataset",
-        kind="neutral"
-    )
-
-    # Display controls
-    mo.hstack([
-        mo.vstack([k_slider, "Current k value"]),
-        mo.vstack([run_button, "Run experiments"]),
-        mo.vstack([add_data_button, "Save threshold"])
-    ])
-
-    return k_slider, run_button, add_data_button
-
-
-@app.cell
-def _(k_slider, np):
+def _(np):
     # Fixed experimental parameters
-    k = k_slider.value
-    n = 50          # Community size
+    k = 10 # Average degree
+    n = 100          # Community size
     q = 2           # Number of communities
 
     # Range of delta_k values to test (10 points from 0 to 8)
@@ -432,18 +403,13 @@ def _(mo):
 
 
 @app.cell
-def _(run_button, delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutual_info_score, np, mo):
-    # Only run experiments when button is clicked
-    mo.stop(not run_button.value, "Click 'Run Experiment' to start")
-
+def _(delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutual_info_score, np, tqdm):
     # Run experiments for each delta_k value
     nmi_scores = []
 
     print(f"Running experiments with k = {k}...")
 
-    for delta_k in delta_k_values:
-        print(f"  Testing delta_k = {delta_k:.2f}")
-
+    for delta_k in tqdm(delta_k_values, desc="Testing δk values", leave=True):
         # Generate SBM network
         result = generate_sbm(k, n, delta_k, q)
 
@@ -452,16 +418,8 @@ def _(run_button, delta_k_values, k, n, q, generate_sbm, detect_communities, nor
             continue
 
         # Handle both return formats
-        if isinstance(result, tuple) and len(result) == 2:
-            # Format: (edge_list, community_membership)
-            edge_list, true_labels = result
-            true_labels = np.array(true_labels)
-
-        else:
-            # Format: igraph.Graph object
-            g = result
-            true_labels = np.array(g.vs["community"])
-            edge_list = [(e.source, e.target) for e in g.es]
+        edge_list, true_labels = result
+        true_labels = np.array(true_labels)
 
         # Detect communities using edge list
         detected_labels = detect_communities(edge_list, q * n)
