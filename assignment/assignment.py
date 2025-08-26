@@ -7,7 +7,6 @@ with app.setup(hide_code=True):
     # Initialization code that runs before all other cells
     import numpy as np
     import igraph
-    import scipy.sparse
     from sklearn.metrics import normalized_mutual_info_score
 
 @app.cell(hide_code=True)
@@ -63,7 +62,7 @@ def _(mo):
             ),
             "📚 Allowed Libraries": mo.md(
                 r"""
-            You **cannot** import any other libraries that result in the grading script failing or a zero score. Only use: `numpy`, `igraph`, `scipy`, `sklearn.metrics.normalized_mutual_info_score`, `pandas`, `altair`
+            You **cannot** import any other libraries that result in the grading script failing or a zero score. Only use: `numpy`, `igraph`, `sklearn.metrics.normalized_mutual_info_score`, `pandas`, `altair`
             """
             ),
         }
@@ -128,10 +127,11 @@ def _(mo):
         r"""
     ## Task 2: Community Detection Function
 
-    Implement a community detection function that takes a network in **scipy sparse adjacency matrix** format and returns detected community labels.
+    Implement a community detection function that takes a network as an **edge list** and returns detected community labels.
 
     **Requirements:**
-    - Input: `scipy.sparse` matrix (adjacency matrix)
+    - Input: `edge_list` - list of tuples representing edges [(node1, node2), (node1, node3), ...]
+    - Input: `num_nodes` - total number of nodes in the network
     - Output: `numpy.ndarray` of community labels (integers starting from 0)
     - You can use any community detection algorithm you prefer:
       - **Leiden algorithm** (recommended for best performance)
@@ -139,7 +139,7 @@ def _(mo):
       - **Infomap** (information-theoretic approach)
       - Any other algorithm available in igraph
 
-    **Hint:** Convert the sparse matrix to igraph format, apply community detection, then return the membership vector.
+    **Hint:** Create igraph Graph from edge list, apply community detection, then return the membership vector.
     """
     )
     return
@@ -147,12 +147,13 @@ def _(mo):
 
 @app.function
 # Task 2
-def detect_communities(adj_matrix):
+def detect_communities(edge_list, num_nodes):
     """
-    Detect communities in a network from adjacency matrix.
+    Detect communities in a network from edge list.
 
     Args:
-        adj_matrix (scipy.sparse matrix): Sparse adjacency matrix
+        edge_list (list): List of tuples representing edges [(node1, node2), ...]
+        num_nodes (int): Total number of nodes in the network
 
     Returns:
         numpy.ndarray: Community labels (integers starting from 0)
@@ -292,7 +293,7 @@ def _(mo):
 
 
 @app.cell
-def _(delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutual_info_score, scipy, np):
+def _(delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutual_info_score, np):
     # Run experiments for each delta_k value
     nmi_scores = []
     
@@ -312,21 +313,14 @@ def _(delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutu
             edge_list, true_labels = result
             true_labels = np.array(true_labels)
             
-            # Create igraph from edge list
-            g = igraph.Graph()
-            g.add_vertices(q * n)  # Total number of nodes
-            g.add_edges(edge_list)
-            
         else:
             # Format: igraph.Graph object
             g = result
             true_labels = np.array(g.vs["community"])
+            edge_list = [(e.source, e.target) for e in g.es]
             
-        # Get adjacency matrix in sparse format
-        adj_matrix = scipy.sparse.csr_matrix(g.get_adjacency().data)
-        
-        # Detect communities
-        detected_labels = detect_communities(adj_matrix)
+        # Detect communities using edge list
+        detected_labels = detect_communities(edge_list, q * n)
         
         if detected_labels is None:  # Student hasn't implemented the function yet
             nmi_scores.append(0)
