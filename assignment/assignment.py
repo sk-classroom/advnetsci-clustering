@@ -92,6 +92,10 @@ def _(mo):
     - `p_out = k_out / n` (probability of between-community edges)
 
     **Return:** An igraph Graph object with community labels stored as vertex attribute "community"
+    
+    **Alternative return format (if preferred):** You may also return a tuple containing:
+    - Edge list: [(node1, node2), (node1, node3), ...] 
+    - Community membership: list of integers [0, 0, 1, 1, ...] indicating community membership
     """
     )
     return
@@ -111,6 +115,9 @@ def generate_sbm(k, n, delta_k, q=2):
 
     Returns:
         igraph.Graph: Graph with community labels stored as vertex attribute "community"
+        OR tuple: (edge_list, community_membership) where:
+            - edge_list: list of tuples [(node1, node2), ...]
+            - community_membership: list of integers [0, 0, 1, 1, ...] indicating community membership
     """
     pass
 
@@ -293,11 +300,27 @@ def _(delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutu
         print(f"Testing delta_k = {delta_k:.2f}")
         
         # Generate SBM network
-        g = generate_sbm(k, n, delta_k, q)
+        result = generate_sbm(k, n, delta_k, q)
         
-        if g is None:  # Student hasn't implemented the function yet
+        if result is None:  # Student hasn't implemented the function yet
             nmi_scores.append(0)
             continue
+        
+        # Handle both return formats
+        if isinstance(result, tuple) and len(result) == 2:
+            # Format: (edge_list, community_membership)
+            edge_list, true_labels = result
+            true_labels = np.array(true_labels)
+            
+            # Create igraph from edge list
+            g = igraph.Graph()
+            g.add_vertices(q * n)  # Total number of nodes
+            g.add_edges(edge_list)
+            
+        else:
+            # Format: igraph.Graph object
+            g = result
+            true_labels = np.array(g.vs["community"])
             
         # Get adjacency matrix in sparse format
         adj_matrix = scipy.sparse.csr_matrix(g.get_adjacency().data)
@@ -308,9 +331,6 @@ def _(delta_k_values, k, n, q, generate_sbm, detect_communities, normalized_mutu
         if detected_labels is None:  # Student hasn't implemented the function yet
             nmi_scores.append(0)
             continue
-        
-        # Get true community labels
-        true_labels = np.array(g.vs["community"])
         
         # Calculate NMI
         nmi = normalized_mutual_info_score(true_labels, detected_labels)
