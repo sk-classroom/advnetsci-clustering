@@ -68,7 +68,17 @@ jobs:
         setup-command: echo "Environment already set up"
         command: uv run tests/test_02.py
         timeout: 10
-        max-score: 10
+        max-score: 2
+
+    - name: Task 3
+      id: task-3
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: Assignment - Test 3
+        setup-command: echo "Environment already set up"
+        command: uv run tests/test_03.py
+        timeout: 10
+        max-score: 8
 
     - name: Commit and push quiz results
       if: always()
@@ -92,6 +102,7 @@ jobs:
       env:
         TASK-1_RESULTS: "${{steps.task-1.outputs.result}}"
         TASK-2_RESULTS: "${{steps.task-2.outputs.result}}"
+        TASK-3_RESULTS: "${{steps.task-3.outputs.result}}"
         QUIZ-CHALLENGE_RESULTS: "${{steps.quiz-challenge.outputs.result}}"
       with:
-        runners: task-1,task-2,quiz-challenge
+        runners: task-1,task-2,task-3,quiz-challenge
