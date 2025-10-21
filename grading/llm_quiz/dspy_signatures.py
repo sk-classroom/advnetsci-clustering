@@ -17,17 +17,15 @@ class ValidationIssue(str, Enum):
     HEAVY_MATH = "heavy_math"
     PROMPT_INJECTION = "prompt_injection"
     ANSWER_QUALITY = "answer_quality"
-    CONTEXT_MISMATCH = (
-        "context_mismatch"  # Question is completely unrelated to course topic (use sparingly - allow reasonable extensions)
-    )
-    WEAK_CONTEXT_ALIGNMENT = (
-        "weak_context_alignment"  # Question is tangentially related but doesn't align well with context (consider if derivable from material)
-    )
+    CONTEXT_MISMATCH = "context_mismatch"  # Question is completely unrelated to course topic (use sparingly - allow reasonable extensions)
+    WEAK_CONTEXT_ALIGNMENT = "weak_context_alignment"  # Question is tangentially related but doesn't align well with context (consider if derivable from material)
     VAGUE_QUESTION = "vague_question"  # Question lacks specificity or clarity
     AMBIGUOUS_WORDING = "ambiguous_wording"  # Question has multiple interpretations
     INCOMPLETE_CONTEXT = "incomplete_context"  # Question lacks sufficient context to answer clearly
     DUPLICATE_QUESTION = "duplicate_question"  # Question is very similar to another question
-    OVERLAPPING_CONTENT = "overlapping_content"  # Question covers content heavily overlapping with another
+    OVERLAPPING_CONTENT = (
+        "overlapping_content"  # Question covers content heavily overlapping with another
+    )
 
 
 class ParseQuestionAndAnswer(dspy.Signature):
@@ -48,24 +46,27 @@ class ValidateQuestion(dspy.Signature):
     """Validate a student's quiz question and their provided correct answer.
 
     CONTENT ALIGNMENT REQUIREMENTS:
-    - Flag context_mismatch if the question is about topics or concepts that are NOT covered in the provided context materials
-    - Flag context_mismatch if the question asks about concepts from a different module or subject area than what's provided in the context
-    - Flag weak_context_alignment if the question is only tangentially related to the provided context materials
-    - Questions should demonstrate understanding of concepts that are explicitly covered in the provided context materials
-    - Questions may explore implications, limitations, or extensions of core concepts ONLY if they stem directly from the provided context
-    - REQUIRE that questions be answerable using the provided context materials
-    - CAREFULLY CHECK if the question topic matches the subject matter in the provided context
-    
+    - Flag context_mismatch ONLY for questions about completely UNRELATED topics not covered in context
+      Example: Context about Euler paths, question about spectral clustering = context_mismatch
+    - DO NOT flag context_mismatch for questions that extend or apply concepts from the context
+      Example: Context about node degree, question about self-loops in degree calculation = acceptable extension
+      Example: Context about MST minimizing total weight, question about whether MST minimizes average distance = acceptable extension (tests understanding using basic graph knowledge)
+    - Flag weak_context_alignment if the question is tangentially related but requires substantial external knowledge
+    - Questions may explore implications, edge cases, or applications of concepts if they can be reasoned from context using basic domain knowledge
+    - Questions asking "Does X also do Y?" where X is in context and Y is a related property are acceptable if answerable with basic knowledge
+    - DISTINGUISH between "different topic" (mismatch) vs "derived application" (acceptable) vs "requires specialized knowledge" (weak alignment)
+
     CLARITY AND SPECIFICITY REQUIREMENTS:
     - Flag vague_question if the question lacks specificity or is too general
     - Flag ambiguous_wording if the question has multiple valid interpretations
     - Flag incomplete_context if the question lacks sufficient context to answer clearly
     - Questions should be precise, unambiguous, and clearly worded
-    
+
     CONTENT DEPTH REQUIREMENTS:
     - Questions should require understanding beyond simple memorization
     - Questions should connect concepts or require analysis/application of knowledge
-    - Higher-level questions that explore limitations, implications, or applications of core concepts are encouraged"""
+    - Higher-level questions that explore limitations, implications, or applications of core concepts are encouraged
+    """
 
     question: str = dspy.InputField(desc="The student's quiz question to validate")
     answer: str = dspy.InputField(desc="The student's provided correct answer")
@@ -73,7 +74,7 @@ class ValidateQuestion(dspy.Signature):
 
     is_valid: bool = dspy.OutputField(desc="Whether the question is valid and acceptable")
     issues: List[ValidationIssue] = dspy.OutputField(
-        desc="List of specific validation issues found (check for context_mismatch, weak_context_alignment, vague_question, ambiguous_wording, incomplete_context). STRICTLY flag context_mismatch when the question is about topics not covered in the provided context materials. Check if the question topic matches the subject matter of the provided context."
+        desc="List of specific validation issues found (check for context_mismatch, weak_context_alignment, vague_question, ambiguous_wording, incomplete_context). Flag context_mismatch ONLY for completely UNRELATED topics. Allow questions testing understanding through related properties/metrics if answerable with basic domain knowledge. Questions asking 'Does X also do Y?' where X is in context are acceptable extensions if derivable from basic knowledge."
     )
     confidence: Literal["HIGH", "MEDIUM", "LOW"] = dspy.OutputField(
         desc="Confidence in validation decision"
@@ -101,58 +102,149 @@ class AnswerQuizQuestion(dspy.Signature):
     )
 
 
+class CheckContextAlignment(dspy.Signature):
+    """Check if a quiz question aligns with the provided context materials.
+
+    This validator determines whether a question substantially deviates from the context
+    or is a reasonable extension/application of the concepts presented.
+
+    ALIGNMENT CATEGORIES:
+    - DIRECT: Question directly tests concepts explicitly covered in the context
+    - EXTENSION: Question asks about implications, applications, derived knowledge, or tests understanding by asking about RELATED properties/metrics that can be reasoned from the context using basic domain knowledge (not overly technical)
+      * Includes questions that ask if a concept does something it doesn't explicitly state (e.g., "Does X also optimize Y?" when context says "X optimizes Z")
+      * The answer may be derivable from understanding what the context DOES cover plus basic domain knowledge
+    - TANGENTIAL: Question is loosely related but requires significant specialized technical knowledge not covered in context
+    - UNRELATED: Question is about completely different topics (substantial deviation from context subject matter)
+
+    EXAMPLES OF ACCEPTABLE (DIRECT or EXTENSION):
+    - Context: "Node degree is the number of edges connected to a node"
+      Question: "How do you count degree when a node has a self-loop?" (EXTENSION - applies the concept)
+    - Context: "PageRank measures node importance based on link structure"
+      Question: "What happens to PageRank if all nodes have equal in-degree?" (EXTENSION - explores implications)
+    - Context: "MST minimizes total edge weight"
+      Question: "Does an MST minimize average distance between all node pairs?" (EXTENSION - tests understanding by asking about a different but related metric; answerable with basic graph knowledge that minimizing total weight ≠ minimizing average distance)
+
+    EXAMPLES OF UNACCEPTABLE (TANGENTIAL or UNRELATED):
+    - Context: "Euler paths visit every edge exactly once"
+      Question: "How does spectral clustering partition a graph?" (UNRELATED - different topic entirely)
+    - Context: "Small-world networks have short path lengths"
+      Question: "What is the time complexity of Dijkstra's algorithm?" (UNRELATED - algorithm analysis vs network property)
+    - Context: "Networks can be robust or fragile"
+      Question: "Derive the eigenvalue equation for the graph Laplacian" (TANGENTIAL - requires specialized mathematical knowledge)
+    """
+
+    question: str = dspy.InputField(desc="The quiz question to check alignment for")
+    answer: str = dspy.InputField(desc="The provided answer (for additional context)")
+    context_content: str = dspy.InputField(desc="The course context materials")
+
+    alignment_type: Literal["DIRECT", "EXTENSION", "TANGENTIAL", "UNRELATED"] = dspy.OutputField(
+        desc="Type of alignment between question and context"
+    )
+    is_substantial_deviation: bool = dspy.OutputField(
+        desc="True if the question is UNRELATED to context topics (substantial deviation)"
+    )
+    reasoning: str = dspy.OutputField(
+        desc="Detailed explanation of why this alignment was determined"
+    )
+    context_topics: List[str] = dspy.OutputField(
+        desc="Main topics/concepts found in the provided context"
+    )
+    question_topics: List[str] = dspy.OutputField(
+        desc="Main topics/concepts the question is asking about"
+    )
+    suggestions: List[str] = dspy.OutputField(
+        desc="If misaligned, suggestions for how to better align the question with context"
+    )
+
+
 class ValidateQuestionSimilarity(dspy.Signature):
     """Check for similarity and overlap between multiple quiz questions.
-    
+
     This validator checks if questions are duplicates or have significant content overlap.
     Questions should cover distinct topics and concepts to provide comprehensive assessment.
-    
+
     SIMILARITY CRITERIA - BE LENIENT:
     - Flag duplicate_question ONLY if questions are essentially asking the exact same thing with near-identical wording
     - Flag overlapping_content ONLY if questions test the exact same specific knowledge with no meaningful distinction
     - Questions about different aspects, limitations, or applications of the same general topic should NOT be flagged as similar
     - Questions that require different reasoning or demonstrate different understanding should be allowed
     - BE GENEROUS - only flag as similar if they are genuinely redundant or nearly identical
-    - Different phrasings that test distinct concepts or reasoning should NOT be flagged as duplicates"""
+    - Different phrasings that test distinct concepts or reasoning should NOT be flagged as duplicates
+    """
 
     questions: List[str] = dspy.InputField(desc="List of all questions to check for similarity")
     answers: List[str] = dspy.InputField(desc="List of corresponding answers for context")
 
-    has_duplicates: bool = dspy.OutputField(desc="Whether any questions are genuine duplicates (nearly identical). Be very conservative - only flag if truly redundant.")
-    has_overlaps: bool = dspy.OutputField(desc="Whether any questions test the exact same specific knowledge. Be lenient - different aspects of same topic are OK.")
-    duplicate_pairs: List[str] = dspy.OutputField(desc="Pairs of question indices that are genuine duplicates (e.g., '1-2')")
-    overlap_pairs: List[str] = dspy.OutputField(desc="Pairs of question indices with identical knowledge testing")
-    similarity_details: List[str] = dspy.OutputField(desc="Detailed explanation of each similarity found, including why it's considered similar or why it's acceptable")
-    overall_assessment: str = dspy.OutputField(desc="Overall assessment of question diversity and coverage, being generous with different aspects of same topic")
+    has_duplicates: bool = dspy.OutputField(
+        desc="Whether any questions are genuine duplicates (nearly identical). Be very conservative - only flag if truly redundant."
+    )
+    has_overlaps: bool = dspy.OutputField(
+        desc="Whether any questions test the exact same specific knowledge. Be lenient - different aspects of same topic are OK."
+    )
+    duplicate_pairs: List[str] = dspy.OutputField(
+        desc="Pairs of question indices that are genuine duplicates (e.g., '1-2')"
+    )
+    overlap_pairs: List[str] = dspy.OutputField(
+        desc="Pairs of question indices with identical knowledge testing"
+    )
+    similarity_details: List[str] = dspy.OutputField(
+        desc="Detailed explanation of each similarity found, including why it's considered similar or why it's acceptable"
+    )
+    overall_assessment: str = dspy.OutputField(
+        desc="Overall assessment of question diversity and coverage, being generous with different aspects of same topic"
+    )
 
 
 class EvaluateAnswer(dspy.Signature):
-    """Evaluate an LLM's answer against the student's correct answer."""
+    """Evaluate an LLM's answer against the student's provided answer, while fact-checking both.
+
+    IMPORTANT EVALUATION CRITERIA:
+    1. First, verify if the student's provided answer is factually correct
+    2. Then, evaluate if the LLM's answer is factually correct
+    3. Student wins ONLY if their answer is correct AND the LLM's answer is incorrect
+    4. If student's answer is factually wrong, they cannot win regardless of LLM's answer
+
+    FACT-CHECKING GUIDELINES:
+    - Verify factual accuracy based on established knowledge
+    - Check for logical consistency in the reasoning
+    - Identify misconceptions or errors in understanding
+    - Consider if there might be multiple valid perspectives
+
+    EXAMPLES:
+    - If student says "False" to a true statement, their answer is incorrect
+    - If student provides wrong reasoning (e.g., "depends on network size" when it actually depends on rewiring probability), mark as incorrect
+    - If both answers are correct but approach differently, both are correct"""
 
     question: str = dspy.InputField(desc="The student's quiz question")
     correct_answer: str = dspy.InputField(desc="The student's provided correct answer")
     llm_answer: str = dspy.InputField(desc="The LLM's attempt at answering the student's question")
 
     verdict: Literal["CORRECT", "INCORRECT"] = dspy.OutputField(
-        desc="Whether the LLM's answer is correct"
+        desc="Whether the LLM's answer is factually correct"
+    )
+    student_answer_correctness: Literal["CORRECT", "INCORRECT", "PARTIALLY_CORRECT"] = (
+        dspy.OutputField(desc="Whether the student's provided answer is factually correct")
     )
     student_wins: bool = dspy.OutputField(
-        desc="True if student wins (LLM got it wrong), False if LLM correct"
+        desc="True if student wins (student correct AND LLM wrong), False otherwise"
     )
     explanation: str = dspy.OutputField(
-        desc="Brief explanation of the evaluation decision and reasoning"
+        desc="Detailed explanation including fact-checking of both answers"
     )
     confidence: Literal["HIGH", "MEDIUM", "LOW"] = dspy.OutputField(
         desc="Confidence level in the evaluation"
     )
+    factual_issues: List[str] = dspy.OutputField(
+        desc="List of factual errors found in either answer"
+    )
     improvement_suggestions: List[str] = dspy.OutputField(
-        desc="Suggestions for making the question more challenging if LLM answered correctly"
+        desc="Suggestions for improving the question or correcting misconceptions"
     )
 
 
 class GenerateRevisionGuidance(dspy.Signature):
     """Generate detailed revision guidance for student's quiz questions that need improvement.
-    
+
     Focus especially on clarity and specificity issues:
     - Provide specific guidance for making vague questions more precise
     - Suggest ways to eliminate ambiguous wording
